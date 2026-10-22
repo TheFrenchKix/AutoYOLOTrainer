@@ -1,0 +1,140 @@
+# =============================================================================
+# AutoYOLO Trainer - configuration principale (Hydra / OmegaConf)
+#
+# Toute valeur peut être surchargée en ligne de commande :
+#   python main.py train -o training.epochs=50 -o labeling.confidence_accept=0.95
+# Les chemins relatifs sont résolus depuis la racine du projet.
+# =============================================================================
+
+project:
+  name: autoyolo
+  # Noms des classes (l'ordre définit les class_id YOLO).
+  classes:
+    - object
+
+paths:
+  datasets: datasets
+  current_dataset: datasets/current
+  archive: datasets/archive
+  raw_images: datasets/raw          # images à annoter dans Label Studio
+  captures: captures
+  accepted: accepted
+  review: review
+  rejected: rejected
+  models: models
+  runs: runs
+  logs: logs
+  state: .autoyolo                  # état interne (compteurs, index de hash...)
+
+capture:
+  save_every_detection: true        # false = seules les images "intéressantes" (active learning)
+  max_images_per_hour: 1000
+  min_interval_seconds: 0.5         # délai minimal entre deux sauvegardes
+  min_confidence: 0.25              # détections en dessous ignorées
+  image_format: png
+  save_labels: true                 # écrit image.txt (YOLO) à côté de la capture
+  save_metadata: true               # écrit image.json (date, heure, conf, classe, bbox)
+  source:
+    type: screen                    # screen | camera | video | folder
+    camera_index: 0
+    path: null                      # fichier vidéo ou dossier d'images
+    region: null                    # [left, top, right, bottom] pour la capture d'écran
+    fps: 5
+
+active_learning:
+  enabled: true
+  score_threshold: 0.3              # score minimal si save_every_detection=false
+  exploration_rate: 0.02            # probabilité de garder une image "banale"
+  small_object_area: 0.01           # aire relative (w*h) sous laquelle un objet est "petit"
+  uncertainty_low: 0.25
+  uncertainty_high: 0.85
+  position_grid: 8                  # grille NxN pour détecter les nouvelles positions
+  weights:
+    rarity: 1.0
+    small_objects: 1.0
+    low_confidence: 1.5
+    new_position: 1.0
+  dedup:
+    enabled: true
+    hash_size: 8
+    max_hamming_distance: 6         # distance pHash sous laquelle deux images sont des doublons
+    memory_size: 5000               # nombre de hash conservés en mémoire
+    ssim_threshold: 0.97            # SSIM vs dernière capture au-delà duquel on ignore
+
+labeling:
+  confidence_accept: 0.97           # conf > accept           -> accepted/
+  confidence_review: 0.85           # review < conf <= accept -> review/ ; sinon rejected/
+  aggregation: min                  # min | mean : agrégation des confiances d'une image
+  empty_policy: rejected            # rejected | review | accepted (image sans détection)
+  use_saved_predictions: false      # réutiliser les prédictions de la capture
+  predict_confidence: 0.25
+
+training:
+  auto_train: true
+  min_new_images: 500
+  base_model: yolo11n.pt
+  epochs: 100
+  retrain_epochs: 50
+  imgsz: 640
+  batch: -1                         # -1 = batch automatique
+  amp: true
+  cache: true                       # true/ram | disk | false
+  workers: 4
+  device: null                      # null = auto (GPU si disponible)
+  patience: 30
+  val_ratio: 0.2
+  fine_tune_from_active: true       # repartir du modèle actif plutôt que du modèle de base
+  check_interval_minutes: 30
+  tensorboard: true
+  seed: 42
+
+evaluation:
+  primary_metric: map50_95          # map50 | map50_95 | precision | recall | f1
+  min_improvement: 0.0              # gain minimal pour promouvoir un nouveau modèle
+
+augmentation:
+  enabled: true
+  offline_copies: 1                 # copies augmentées générées par image d'entraînement
+  transforms:
+    horizontal_flip: {enabled: true, p: 0.5, params: {}}
+    vertical_flip: {enabled: false, p: 0.5, params: {}}
+    rotation: {enabled: true, p: 0.3, params: {limit: 15}}
+    blur: {enabled: true, p: 0.2, params: {blur_limit: 5}}
+    brightness: {enabled: true, p: 0.4, params: {brightness_limit: 0.2, contrast_limit: 0.2}}
+    hsv: {enabled: true, p: 0.4, params: {hue: 10, saturation: 20, value: 20}}
+    noise: {enabled: true, p: 0.2, params: {std_min: 0.02, std_max: 0.08}}
+    random_crop: {enabled: true, p: 0.3, params: {scale_min: 0.6}}
+    perspective: {enabled: true, p: 0.2, params: {scale_max: 0.06}}
+  mosaic: {enabled: true, p: 0.3, params: {}}
+  mixup: {enabled: true, p: 0.1, params: {alpha: 0.5}}
+  # Augmentations "en ligne" d'Ultralytics pendant l'entraînement.
+  yolo_online:
+    mosaic: 1.0
+    mixup: 0.1
+    fliplr: 0.5
+    degrees: 0.0
+
+labelstudio:
+  url: http://localhost:8080
+  port: 8080
+  username: admin@autoyolo.local
+  password: autoyolo-change-me
+  api_token: ${oc.env:LABEL_STUDIO_TOKEN,autoyolo-dev-token-change-me}
+  project_title: AutoYOLO
+  review_project_title: AutoYOLO - Review
+  venv_dir: .venv-labelstudio       # Label Studio est isolé dans son propre venv
+  data_dir: .labelstudio
+
+dashboard:
+  host: 127.0.0.1
+  port: 8000
+
+logging:
+  level: INFO
+  rotation: 10 MB
+  retention: 30 days
+
+clean:
+  rejected_retention_days: 7
+  keep_runs: 5
+  keep_dataset_versions: 5          # les versions plus anciennes sont zippées dans archive/

@@ -1,0 +1,4 @@
+# Label Studio, installé automatiquement dans .venv-labelstudio par
+# scripts/start_labelstudio.py (isolé car ses dépendances épinglées - Django,
+# numpy... - peuvent entrer en conflit avec Ultralytics/PyTorch).
+label-studio>=1.15

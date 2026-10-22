@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environnements
+.venv/
+.venv-labelstudio/
+.env
+
+# Données et artefacts générés (les dossiers sont conservés via .gitkeep)
+datasets/*
+!datasets/current/
+!datasets/archive/
+datasets/current/*
+datasets/archive/*
+captures/*
+accepted/*
+review/*
+rejected/*
+models/*
+runs/*
+logs/*
+!**/.gitkeep
+
+# État interne et Label Studio
+.autoyolo/
+.labelstudio/
+
+# Poids téléchargés par Ultralytics
+*.pt
+*.onnx
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

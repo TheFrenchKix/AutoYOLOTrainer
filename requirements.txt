@@ -1,0 +1,50 @@
+# =============================================================================
+# AutoYOLO Trainer - dépendances (Python 3.12)
+#
+#   pip install -r requirements.txt
+#
+# PyTorch avec CUDA : l'index ci-dessous fournit les builds GPU (CUDA 12.6) pour
+# Windows/Linux. Sans GPU NVIDIA, remplacez "cu126" par "cpu" (ou utilisez
+# `python scripts/setup_env.py --cpu`).
+# =============================================================================
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+# --- Deep learning -----------------------------------------------------------
+torch>=2.5
+torchvision>=0.20
+ultralytics>=8.3.0          # YOLO11
+onnx>=1.16
+onnxslim>=0.1.82          # simplification lors de l'export ONNX
+onnxruntime>=1.19           # onnxruntime-gpu possible pour l'inférence GPU
+tensorboard>=2.17
+
+# --- Vision / images -----------------------------------------------------------
+opencv-python>=4.10
+numpy>=1.26,<3
+pillow>=10.4
+albumentations>=2.0
+scikit-image>=0.24
+ImageHash>=4.3
+
+# --- Configuration / outillage -----------------------------------------------
+hydra-core>=1.3.2
+omegaconf>=2.3
+pyyaml>=6.0
+rich>=13.7
+loguru>=0.7
+tqdm>=4.66
+pandas>=2.2
+matplotlib>=3.9
+watchdog>=5.0
+requests>=2.32
+
+# --- Dashboard ---------------------------------------------------------------
+fastapi>=0.115
+uvicorn[standard]>=0.30
+
+# --- Tests ---------------------------------------------------------------------
+pytest>=8.3
+httpx>=0.27                 # client de test FastAPI
+
+# Label Studio est installé dans un venv séparé (.venv-labelstudio) par
+# scripts/start_labelstudio.py : voir requirements-labelstudio.txt.
