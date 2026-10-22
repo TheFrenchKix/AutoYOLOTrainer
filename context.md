@@ -31,8 +31,10 @@ ONNX Runtime, TensorBoard).
 - **Test de bout en bout réel validé** (CPU, Python 3.13, Ultralytics 8.4, torch 2.14) :
   entraînement initial → capture → auto-labeling → ré-entraînement → comparaison/non-promotion
   → rapport HTML → logs → export ONNX → stats.
+- **Capture d'écran manuelle** (`scripts/capture.py`) testée en réel sous Windows : listing,
+  écran entier, tous les écrans, fenêtre masquée (rendu via `PrintWindow`).
 - **Non testé en réel** : appels API Label Studio (serveur jamais démarré), capture
-  écran/webcam, entraînement GPU/CUDA.
+  webcam, entraînement GPU/CUDA.
 - Rien n'a encore été commité (en dehors du commit initial).
 
 ## Environnement de la machine de dev
@@ -62,7 +64,8 @@ src/
   dashboard/               app.py (FastAPI), stats.py (partagé avec `main.py stats`)
   cli/                     parser.py, commands.py
   utils/                   logging.py (canaux Loguru), files.py, images.py, hashing.py, html.py, lock.py
-scripts/                   setup_env.py, start_labelstudio.py, import_labelstudio.py, train_initial.py
+scripts/                   setup_env.py, start_labelstudio.py, import_labelstudio.py, train_initial.py,
+                           capture.py (capture d'une fenêtre ou d'un écran, Windows uniquement, ctypes)
 tests/                     pytest, avec FakeDetector / FakeBackend dans conftest.py (ni GPU ni réseau)
 ```
 
@@ -107,6 +110,9 @@ py -3.12 scripts\setup_env.py [--cpu]      # crée .venv + dépendances
 python scripts\start_labelstudio.py [--review]
 python scripts\import_labelstudio.py [--review]
 python scripts\train_initial.py            # = python main.py train
+python scripts\capture.py --list           # écrans et fenêtres visibles
+python scripts\capture.py --screen 1 | --window "TEXTE" [--delay 3] [-o fichier.png]
+                                           # défaut : captures\manuel\AAAAMMJJ_HHMMSS.png
 python main.py capture|label|retrain|stats|version|clean|run|dataset|dashboard|export
 python main.py -o training.epochs=10 train # surcharge Hydra
 pytest                                     # tests
@@ -123,6 +129,8 @@ tensorboard --logdir runs
   tâches déjà déplacées vers accepted/ (bruit sans conséquence).
 - Les images de `review/` ne sont jamais purgées automatiquement (seul `rejected/` l'est).
 - Avertissement Starlette : `httpx` déprécié pour `TestClient` (sans impact).
+- `scripts/capture.py` : certaines applications (DirectX, UWP) peuvent sortir une image noire avec
+  `PrintWindow` ; une fenêtre réduite n'est pas capturable. Pas de test automatisé (API Windows).
 
 ## Journal des modifications
 
@@ -131,3 +139,4 @@ tensorboard --logdir runs
 | 2026-10-22 | Création complète du projet selon la spec (architecture, CLI, scripts, tests, README). |
 | 2026-10-22 | Test de bout en bout réel avec Ultralytics validé ; ajout de la dépendance `onnxslim`. |
 | 2026-10-22 | Ajout de `context.md` (ce fichier) et de `CLAUDE.md` qui l'importe automatiquement. |
+| 2026-10-22 | Ajout de `scripts/capture.py` : capture d'un écran (`--screen`), de tous les écrans (`--screen 0`) ou d'une fenêtre (`--window`, rendu `PrintWindow`), listing (`--list`). |
