@@ -40,19 +40,27 @@ def fetch_tasks(ctx: AppContext, title: str, from_file: str | None) -> list[dict
     return tasks
 
 
-def import_review(ctx: AppContext, tasks: list[dict]) -> int:
-    """Human-validated review images: write corrected labels and move to accepted/."""
+def import_review(ctx: AppContext, tasks: list[dict]) -> tuple[int, int]:
+    """Human-validated review images: write corrected labels and move to accepted/.
+
+    A file that cannot be moved (still open elsewhere) is reported and skipped, so the other images are
+    still imported; running the import again moves it. Returns (moved, failed).
+    """
     converted, warnings = convert_tasks(tasks, ctx.config.class_names, ROOT, [ctx.workspace.review])
-    moved = 0
+    moved = failed = 0
     for item in converted:
         if item.image_path is None or item.image_path.parent != ctx.workspace.review:
             continue
-        write_labels(item.image_path.with_suffix(".txt"), item.boxes)
-        move_with_sidecars(item.image_path, ctx.workspace.accepted)
-        moved += 1
+        try:
+            write_labels(item.image_path.with_suffix(".txt"), item.boxes)
+            move_with_sidecars(item.image_path, ctx.workspace.accepted)
+            moved += 1
+        except OSError as exc:
+            failed += 1
+            print(f"! {item.image_path.name}: déplacement impossible ({exc})")
     for warning in warnings:
         print(f"! {warning}")
-    return moved
+    return moved, failed
 
 
 def main() -> int:
@@ -70,8 +78,11 @@ def main() -> int:
     print(f"{len(tasks)} tâches récupérées")
 
     if args.review:
-        print(f"{import_review(ctx, tasks)} images validées déplacées vers {ctx.workspace.accepted}")
-        return 0
+        moved, failed = import_review(ctx, tasks)
+        print(f"{moved} images validées déplacées vers {ctx.workspace.accepted}")
+        if failed:
+            print(f"{failed} image(s) n'ont pas pu être déplacées (fichier utilisé ?): relancez l'import")
+        return 1 if failed else 0
 
     search_dirs = [ctx.workspace.raw_images, ROOT / cfg.data_dir / "media" / "upload"]
     search_dirs += [p for p in (ROOT / cfg.data_dir / "media" / "upload").glob("*") if p.is_dir()]

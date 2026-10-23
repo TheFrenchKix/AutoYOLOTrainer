@@ -10,7 +10,7 @@ project:
   name: autoyolo
   # Noms des classes (l'ordre définit les class_id YOLO).
   classes:
-    - object
+    - player
 
 paths:
   datasets: datasets
@@ -35,9 +35,11 @@ capture:
   save_labels: true                 # écrit image.txt (YOLO) à côté de la capture
   save_metadata: true               # écrit image.json (date, heure, conf, classe, bbox)
   source:
-    type: screen                    # screen | camera | video | folder
+    type: screen                    # screen | window | camera | video | folder
     camera_index: 0
     path: null                      # fichier vidéo ou dossier d'images
+    window: null                    # titre (ou partie du titre) de la fenêtre, source window (Windows)
+    screen: null                    # numéro d'écran (0 = tous, 1, 2... voir capture.py --list), source screen
     region: null                    # [left, top, right, bottom] pour la capture d'écran
     fps: 5
 

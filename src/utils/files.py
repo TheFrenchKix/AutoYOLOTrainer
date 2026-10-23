@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -66,15 +67,27 @@ def link_or_copy(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
 
 
+def _move(source: Path, target: Path, retries: int = 5, delay: float = 0.4) -> None:
+    """``shutil.move`` that waits for a file Windows still holds open (viewer, server streaming it...)."""
+    for attempt in range(retries):
+        try:
+            shutil.move(str(source), target)
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay)
+
+
 def move_with_sidecars(image: Path, dest_dir: Path, suffixes: tuple[str, ...] = (".txt", ".json")) -> Path:
     """Move an image and its sidecar files (same stem) into ``dest_dir``."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / image.name
-    shutil.move(str(image), target)
+    _move(image, target)
     for suffix in suffixes:
         sidecar = image.with_suffix(suffix)
         if sidecar.exists():
-            shutil.move(str(sidecar), dest_dir / sidecar.name)
+            _move(sidecar, dest_dir / sidecar.name)
     return target
 
 

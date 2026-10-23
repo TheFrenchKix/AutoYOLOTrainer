@@ -12,6 +12,7 @@ so the comparison is fair even though the dataset grows between versions.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -81,33 +82,55 @@ class TrainerManager:
         return self.config.training.auto_train and self.pending_images() >= self.config.training.min_new_images
 
     # --------------------------------------------------------------- training
-    def train_initial(self, epochs: int | None = None, base_model: str | None = None) -> TrainingOutcome:
-        """First training (YOLO11n by default) on the manually annotated dataset."""
+    def train_models(self, models: Sequence[str] | None = None, epochs: int | None = None) -> list[TrainingOutcome]:
+        """Train one model per entry of ``models`` on the *same* snapshot of datasets/current, then compare them.
+
+        Each candidate is evaluated against the model active at that moment, so the best one ends up active.
+        Without ``models`` the configured ``training.base_model`` is trained.
+        """
         if not self.datasets.images():
             raise RuntimeError(
                 f"Dataset vide ({self.workspace.current_dataset}). "
                 "Annotez des images puis lancez scripts/import_labelstudio.py"
             )
+        weights = list(dict.fromkeys(models or [self.config.training.base_model]))
+        note = "initial" if len(weights) == 1 else f"comparaison de {len(weights)} modèles"
         return self._run_cycle(
-            weights=base_model or self.config.training.base_model,
-            epochs=epochs or self.config.training.epochs,
-            note="initial",
+            weights, epochs or self.config.training.epochs, note,
             force_promote=self.registry.active_version() is None,
         )
 
-    def retrain(self, force: bool = False) -> TrainingOutcome | None:
-        """Import accepted images, train a candidate and promote it if better."""
+    def train_initial(self, epochs: int | None = None, base_model: str | None = None) -> TrainingOutcome:
+        """First training (YOLO11n by default) on the manually annotated dataset."""
+        return self.train_models([base_model] if base_model else None, epochs)[0]
+
+    def retrain_models(
+        self, force: bool = False, models: Sequence[str] | None = None, epochs: int | None = None
+    ) -> list[TrainingOutcome]:
+        """Import accepted images, train the candidate(s) and promote the best one if it beats the active model.
+
+        Without ``models`` the active model is fine-tuned (``training.fine_tune_from_active``). With ``models``
+        each architecture is trained from its pretrained weights, to compare them on the same data.
+        """
         pending = self.pending_images()
         if not force and pending < self.config.training.min_new_images:
             log.info(f"Pas de ré-entraînement: {pending}/{self.config.training.min_new_images} nouvelles images")
-            return None
+            return []
         imported = self.datasets.import_folder(self.workspace.accepted, move=True)
         self._update_state(imported_since_training=int(self._state().get("imported_since_training", 0)) + imported)
 
-        active = self.registry.active_weights()
         tcfg = self.config.training
-        weights = str(active) if (active and tcfg.fine_tune_from_active) else tcfg.base_model
-        return self._run_cycle(weights=weights, epochs=tcfg.retrain_epochs, note=f"retrain +{pending} images")
+        if models:
+            weights = list(dict.fromkeys(models))
+        else:
+            active = self.registry.active_weights()
+            weights = [str(active) if (active and tcfg.fine_tune_from_active) else tcfg.base_model]
+        return self._run_cycle(weights, epochs or tcfg.retrain_epochs, f"retrain +{pending} images")
+
+    def retrain(self, force: bool = False) -> TrainingOutcome | None:
+        """Retrain (fine-tuning the active model) if enough new images were accepted; ``None`` otherwise."""
+        outcomes = self.retrain_models(force)
+        return outcomes[0] if outcomes else None
 
     def maybe_retrain(self) -> TrainingOutcome | None:
         """Retrain only if enough new images exist and no training is running."""
@@ -115,7 +138,48 @@ class TrainerManager:
             return None
         return self.retrain()
 
-    def _run_cycle(self, weights: str, epochs: int, note: str, force_promote: bool = False) -> TrainingOutcome:
+    def benchmark_models(self, versions: Sequence[int] | None = None) -> dict[int, dict[str, float]]:
+        """Measure the inference speed of registered models, one after the other, and store it in their info."""
+        images = self._benchmark_images()
+        if not images:
+            raise RuntimeError("Aucune image de validation pour mesurer la vitesse (créez un dataset d'abord)")
+        results: dict[int, dict[str, float]] = {}
+        for version in versions or self.registry.versions.versions():
+            weights = self.registry.versions.path(version) / "best.pt"
+            if not weights.exists():
+                continue
+            speed = self.backend.benchmark(weights, images)
+            if speed:
+                self.registry.update_info(version, speed_ms=speed["inference_ms"], params_m=speed["params_m"])
+                results[version] = speed
+        return results
+
+    def _benchmark_images(self) -> list[Path]:
+        latest = self.datasets.versions.latest()
+        folder = (self.datasets.versions.path(latest) if latest else self.workspace.current_dataset) / "images" / "val"
+        return list_images(folder)
+
+    def _measure_speed(self, weights: Path, images_dir: Path) -> dict[str, float]:
+        """Speed of a fresh candidate; a failed measurement must not lose a finished training."""
+        try:
+            speed = self.backend.benchmark(weights, list_images(images_dir))
+        except Exception as exc:
+            log.warning(f"Mesure de vitesse impossible: {exc}")
+            return {}
+        return {"speed_ms": speed["inference_ms"], "params_m": speed["params_m"]} if speed else {}
+
+    def _architecture(self, weights: str) -> str:
+        """``yolo26s`` for pretrained weights; a fine-tuned registry model inherits its parent's architecture."""
+        path = Path(weights)
+        parent = path.parent
+        in_registry = parent.parent == self.registry.versions.base_dir
+        if in_registry and parent.name.startswith("v") and parent.name[1:].isdigit():
+            return self.registry.architecture(int(parent.name[1:]))
+        return path.stem
+
+    def _run_cycle(
+        self, weights: Sequence[str], epochs: int, note: str, force_promote: bool = False
+    ) -> list[TrainingOutcome]:
         with self.lock:
             dataset_version, dataset_dir = self.datasets.create_version(note=note)
             data_yaml = dataset_dir / "data.yaml"
@@ -123,21 +187,30 @@ class TrainerManager:
             if aug.enabled and aug.offline_copies > 0:
                 AugmentationPipeline(aug, seed=self.config.training.seed).augment_split(dataset_dir)
 
-            name = f"train_d{dataset_version}_{datetime.now():%Y%m%d_%H%M%S}"
-            log.info(f"Entraînement {name}: poids={weights}, epochs={epochs}, dataset=v{dataset_version}")
-            result = self.backend.train(data_yaml, weights, self.workspace.runs, name, epochs)
-            outcome = self._evaluate_and_register(result.run_dir, data_yaml, dataset_version, name, force_promote)
-            outcome.notes.append(note)
+            outcomes: list[TrainingOutcome] = []
+            for start in weights:
+                name = f"train_d{dataset_version}_{datetime.now():%Y%m%d_%H%M%S}"
+                if len(weights) > 1:
+                    name += f"_{Path(start).stem}"
+                log.info(f"Entraînement {name}: poids={start}, epochs={epochs}, dataset=v{dataset_version}")
+                result = self.backend.train(data_yaml, start, self.workspace.runs, name, epochs)
+                outcome = self._evaluate_and_register(
+                    result.run_dir, data_yaml, dataset_version, name,
+                    force_promote and self.registry.active_version() is None, self._architecture(start),
+                )
+                outcome.notes.append(note)
+                outcomes.append(outcome)
             self._update_state(
                 imported_since_training=0,
                 last_training=datetime.now().isoformat(timespec="seconds"),
-                last_model_version=outcome.model_version,
-                last_promoted=outcome.promoted,
+                last_model_version=outcomes[-1].model_version,
+                last_promoted=any(o.promoted for o in outcomes),
             )
-            return outcome
+            return outcomes
 
     def _evaluate_and_register(
-        self, run_dir: Path, data_yaml: Path, dataset_version: int, name: str, force_promote: bool
+        self, run_dir: Path, data_yaml: Path, dataset_version: int, name: str, force_promote: bool,
+        architecture: str = "inconnue",
     ) -> TrainingOutcome:
         eval_dir = self.workspace.runs / "eval"
         candidate = self.backend.evaluate(run_dir / "weights" / "best.pt", data_yaml, eval_dir, f"{name}_candidate")
@@ -151,10 +224,12 @@ class TrainerManager:
         ecfg = self.config.evaluation
         promoted = force_promote or is_better(candidate, reference, ecfg.primary_metric, ecfg.min_improvement)
 
+        speed = self._measure_speed(run_dir / "weights" / "best.pt", data_yaml.parent / "images" / "val")
         model_version = self.registry.register(
             run_dir / "weights", candidate.to_dict(), dataset_version, run_dir,
             extra={"reference_version": reference_version,
-                   "reference_metrics": reference.to_dict() if reference else None},
+                   "reference_metrics": reference.to_dict() if reference else None,
+                   "architecture": architecture, **speed},
         )
         if promoted:
             self.registry.promote(model_version)

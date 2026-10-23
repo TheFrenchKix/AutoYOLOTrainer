@@ -138,6 +138,7 @@ Ultralytics/PyTorch).
 
 ```powershell
 python scripts\train_initial.py          # ou : python main.py train
+python main.py train --model yolo26n.pt --model yolo11n.pt   # comparer plusieurs architectures
 ```
 
 Paramètres par défaut (tous configurables) : **YOLO11n**, **100 epochs**, **batch auto**
@@ -168,6 +169,8 @@ tensorboard --logdir runs
 python main.py capture                       # capture d'écran (défaut)
 python main.py capture --source camera       # webcam
 python main.py capture --source video --path video.mp4
+python main.py capture --source screen --screen 2          # un écran précis (0 = tous, voir scripts/capture.py --list)
+python main.py capture --source window --window "Mon jeu"   # une fenêtre (Windows)
 ```
 
 À chaque détection, le `CaptureManager` enregistre dans `captures/` :
@@ -223,6 +226,8 @@ python scripts\import_labelstudio.py --review     # images validées -> accepted
 ```powershell
 python main.py retrain            # si >= training.min_new_images (500) nouvelles images
 python main.py retrain --force    # immédiatement
+python main.py retrain --force --model yolo26n.pt --model yolo26s.pt   # comparer des architectures
+python main.py benchmark          # vitesse (ms/image, FPS) de tous les modèles enregistrés
 ```
 
 Cycle :
@@ -264,10 +269,12 @@ python main.py version --promote 3  # réactiver models/v3
 
 | Commande | Rôle |
 |----------|------|
-| `python main.py train` | premier entraînement |
+| `python main.py train` | premier entraînement (`--model` répétable : plusieurs architectures comparées sur les mêmes données) |
 | `python main.py capture` | capture automatique |
+| `python main.py preview` | fenêtre de rendu 300x300 : détections du modèle en direct (boîte, label, confiance), zone centrale 200x200 par défaut (`--zone 0` = image entière) |
 | `python main.py label` | auto-labeling / tri |
-| `python main.py retrain` | ré-entraînement conditionnel |
+| `python main.py retrain` | ré-entraînement conditionnel (`--model` répétable, `--epochs`) |
+| `python main.py benchmark` | mesure la vitesse d'inférence des modèles enregistrés |
 | `python main.py stats` | statistiques du projet |
 | `python main.py version` | versions modèles/datasets, `--promote N` |
 | `python main.py clean` | purge `rejected/` ancien, vieux runs, archive les vieux datasets (`--dry-run`, `--dedup`) |
@@ -278,11 +285,50 @@ python main.py version --promote 3  # réactiver models/v3
 
 Toute valeur de configuration peut être surchargée : `python main.py -o training.epochs=20 -o training.device=0 train`.
 
+### Choisir le modèle YOLO le plus adapté
+
+Le formulaire d'entraînement propose un catalogue (`src/model/catalog.py`) : YOLO26, YOLO11, YOLOv10, YOLOv8 et
+YOLO12 en tailles nano / small / medium. Pour une détection rapide, essayez d'abord les versions **nano** et
+**small**. Cochez plusieurs modèles (ou répétez `--model`) : ils sont entraînés l'un après l'autre sur le **même
+snapshot** du dataset, évalués sur la **même validation**, et le meilleur selon `evaluation.primary_metric`
+devient actif. Pour chaque modèle, `info.json` garde l'architecture, le nombre de paramètres et le temps
+d'inférence médian (`ms/image`, pré et post-traitement compris), affichés dans Modèles ▸ Historique, dans
+`main.py version` et dans le rapport HTML. `main.py benchmark` mesure la vitesse des modèles déjà entraînés.
+
+Sans `--model`, le ré-entraînement continue d'affiner le modèle actif (`training.fine_tune_from_active`).
+La promotion automatique ne regarde que la métrique principale : si la vitesse compte autant que la
+précision, comparez les lignes du tableau avant de choisir (`version --promote N` pour activer un modèle).
+
 ### Tableau de bord
 
-`python main.py dashboard` affiche (rafraîchi toutes les 30 s) : nombre d'images et
-d'annotations, progression du dataset, derniers entraînements, meilleure mAP, modèle
-actif, espace disque, captures, images en attente de validation. JSON brut : `/api/stats`.
+`python main.py dashboard` ouvre une interface web avec un menu et des sous-menus :
+
+| Menu | Contenu |
+|------|---------|
+| Vue d'ensemble | images, annotations, mAP, modèle actif, progression avant le prochain entraînement, espace disque (rafraîchie toutes les 30 s) |
+| Entraînement | premier entraînement et ré-entraînement, avec cases à cocher pour **comparer plusieurs modèles YOLO** |
+| Collecte | captures d'écran vers `datasets/raw`, capture automatique, auto-labeling, mode autonome |
+| Label Studio | démarrer, importer les annotations (projet de revue, export JSON, doublons) |
+| Dataset | rapport, validation, doublons, fusion, import d'un dossier, snapshot |
+| Modèles | historique avec bouton « Activer » (retour en arrière), **tester le modèle** (fenêtre de rendu en direct), activer une version, export ONNX |
+| Maintenance | nettoyage (simulation par défaut), statistiques |
+| Tâches | liste des actions lancées, sortie en direct, bouton « Arrêter » |
+| Configuration | valeurs effectives (mots de passe masqués) et surcharges `CLE=VALEUR` appliquées aux actions |
+
+Pour les sources écran et fenêtre, le formulaire propose des listes déroulantes remplies avec les écrans et les
+fenêtres ouvertes (bouton « Actualiser » ; « Autre… » permet de saisir un titre à la main).
+
+« Tester le modèle » ouvre une fenêtre OpenCV sur le bureau (300x300 par défaut) : `q` ou Échap la ferme,
+`+` / `-` règlent le seuil de confiance en direct, `z` bascule entre la zone agrandie et l'image entière.
+Par défaut seul le **carré central de 200x200 px** est capturé et analysé (champ « Zone de détection »,
+`0` = image entière) : environ deux fois plus d'images par seconde. La zone ne s'applique qu'à l'aperçu :
+la capture automatique et le mode autonome analysent toujours l'image entière, sinon les captures
+sauvegardées auraient des labels incomplets.
+
+Chaque action lance la commande correspondante en arrière-plan (un processus par tâche, une seule
+tâche du même type à la fois) et affiche sa sortie en direct. Les tâches encore en cours sont
+arrêtées quand le dashboard se ferme. Les actions ne sont acceptées que si le serveur écoute en
+local (`dashboard.host: 127.0.0.1`). JSON brut des statistiques : `/api/stats`.
 
 ## 9. Configuration
 
@@ -293,7 +339,7 @@ les dataclasses de [`src/config/schema.py`](src/config/schema.py)). Sections :
 |---------|---------|
 | `project` | nom, liste des classes |
 | `paths` | emplacement de chaque dossier |
-| `capture` | source (screen/camera/video/folder), débit, format |
+| `capture` | source (screen/window/camera/video/folder, écran ou fenêtre choisis), débit, format |
 | `active_learning` | poids des signaux, seuils, dédoublonnage pHash/SSIM |
 | `labeling` | seuils accept/review, agrégation `min`/`mean`, politique image vide |
 | `training` | modèle de base, epochs, batch, AMP, cache, seuil de ré-entraînement |
@@ -331,7 +377,7 @@ AutoYOLO/
 │   ├── datasets/            DatasetManager, format YOLO, Label Studio, versioning, augmentation
 │   ├── model/               types (Detection, YoloBox), détecteurs YOLO/ONNX, ModelRegistry
 │   ├── trainer/             TrainerManager, backend Ultralytics, métriques, rapport, scheduler
-│   ├── dashboard/           FastAPI + statistiques
+│   ├── dashboard/           FastAPI : menu web, catalogue d'actions, tâches, statistiques
 │   ├── cli/                 parseur et commandes
 │   ├── utils/               logging, fichiers, images, hash, HTML, verrou
 │   └── context.py           assemblage des composants depuis la config

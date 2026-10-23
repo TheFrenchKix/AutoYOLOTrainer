@@ -8,9 +8,12 @@ from src.cli import commands
 
 
 def _capture_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--source", choices=["screen", "camera", "video", "folder"],
+    parser.add_argument("--source", choices=["screen", "window", "camera", "video", "folder"],
                         help="surcharge capture.source.type")
     parser.add_argument("--path", help="fichier vidéo ou dossier (source video/folder)")
+    parser.add_argument("--window", metavar="TEXTE", help="titre de la fenêtre à capturer (source window)")
+    parser.add_argument("--screen", type=int, metavar="N",
+                        help="écran à capturer, 0 = tous (source screen, voir scripts/capture.py --list)")
     parser.add_argument("--duration", type=float, help="durée maximale en secondes")
 
 
@@ -25,15 +28,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="commande")
 
-    p = sub.add_parser("train", help="premier entraînement (YOLO11n, 100 epochs)")
+    p = sub.add_parser("train", help="premier entraînement, un ou plusieurs modèles à comparer")
     p.add_argument("--epochs", type=int)
-    p.add_argument("--model", help="poids de départ (défaut: training.base_model)")
+    p.add_argument("--model", action="append", metavar="POIDS",
+                   help="poids de départ, ex. yolo26n.pt (répétable pour comparer; défaut: training.base_model)")
     p.set_defaults(func=commands.cmd_train)
 
     p = sub.add_parser("capture", help="capture automatique des détections")
     _capture_options(p)
     p.add_argument("--max-frames", type=int)
     p.set_defaults(func=commands.cmd_capture)
+
+    p = sub.add_parser("preview", help="aperçu en direct des détections du modèle (fenêtre 300x300)")
+    _capture_options(p)
+    p.add_argument("--size", type=int, default=300, help="côté de la fenêtre en pixels (défaut: 300)")
+    p.add_argument("--conf", type=float, help="seuil de confiance (défaut: capture.min_confidence)")
+    p.add_argument("--model", help="poids .pt à tester (défaut: modèle actif)")
+    p.add_argument("--zone", type=int, default=200, metavar="PX",
+                   help="analyse seulement le carré central de PX pixels (défaut: 200, 0 = image entière)")
+    p.add_argument("--fps", type=float,
+                   help="limite d'images/s (défaut: aucune pour écran/fenêtre/caméra, sinon capture.source.fps)")
+    p.set_defaults(func=commands.cmd_preview)
 
     p = sub.add_parser("label", help="auto-labeling des captures (accepted/review/rejected)")
     p.add_argument("--folder", help="dossier à traiter (défaut: captures/)")
@@ -43,7 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("retrain", help="ré-entraîner si assez de nouvelles images")
     p.add_argument("--force", action="store_true", help="ignorer training.min_new_images")
+    p.add_argument("--epochs", type=int, help="défaut: training.retrain_epochs")
+    p.add_argument("--model", action="append", metavar="POIDS",
+                   help="entraîne cette architecture depuis ses poids pré-entraînés (répétable pour comparer); "
+                        "sans cette option, le modèle actif est affiné")
     p.set_defaults(func=commands.cmd_retrain)
+
+    p = sub.add_parser("benchmark", help="mesure la vitesse d'inférence des modèles enregistrés")
+    p.add_argument("--version", type=int, action="append", metavar="N", help="version à mesurer (défaut: toutes)")
+    p.set_defaults(func=commands.cmd_benchmark)
 
     p = sub.add_parser("stats", help="statistiques du projet")
     p.add_argument("--fast", action="store_true", help="ne pas calculer l'espace disque")

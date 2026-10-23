@@ -82,6 +82,7 @@ class FakeBackend:
         self.candidate_metrics = list(candidate_metrics)
         self.trained: list[tuple[str, int]] = []
         self.scores: dict[str, Metrics] = {}
+        self.benchmarked: list[Path] = []
 
     def train(self, data_yaml: Path, weights: str, project_dir: Path, name: str, epochs: int) -> TrainResult:
         run_dir = project_dir / name
@@ -96,6 +97,10 @@ class FakeBackend:
     def evaluate(self, weights: Path, data_yaml: Path, project_dir: Path, name: str) -> Metrics:
         # The weights file content is the run name, which maps to its metrics.
         return self.scores[Path(weights).read_text()]
+
+    def benchmark(self, weights: Path, images: list[Path]) -> dict[str, float]:
+        self.benchmarked.append(Path(weights))
+        return {"inference_ms": 4.0 + len(self.benchmarked), "params_m": 2.6}
 
 
 @pytest.fixture

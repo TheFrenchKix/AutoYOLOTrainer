@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoYOLO Trainer</title>
+<style>
+:root { --bg:#f4f5f8; --panel:#fff; --fg:#1d1d24; --muted:#6b6b78; --line:rgba(127,127,127,.22); --accent:#2b6cb0;
+  --accent-fg:#fff; --ok:#2f855a; --bad:#c53030; --warn:#b7791f; --code:#101218; --code-fg:#d7dae0; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#14141a; --panel:#1e1e27; --fg:#e8e8ee; --muted:#9a9aa8; --accent:#63b3ed; --accent-fg:#0d1420;
+    --ok:#68d391; --bad:#fc8181; --warn:#f6ad55; --code:#0b0c10; --code-fg:#d7dae0; }
+}
+* { box-sizing:border-box }
+body { margin:0; font:15px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+.layout { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
+nav { background:var(--panel); border-right:1px solid var(--line); padding:16px 12px; position:sticky; top:0;
+  height:100vh; overflow-y:auto; }
+nav .brand { font-weight:700; font-size:1.1em; padding:4px 10px 14px; }
+nav a, nav button.group { display:flex; align-items:center; justify-content:space-between; width:100%; text-align:left;
+  padding:8px 10px; border-radius:8px; color:inherit; text-decoration:none; background:none; border:0; font:inherit;
+  cursor:pointer; }
+nav a:hover, nav button.group:hover { background:var(--line); }
+nav a.active { background:var(--accent); color:var(--accent-fg); }
+nav button.group { font-weight:600; }
+nav button.group::after { content:"▸"; color:var(--muted); transition:transform .15s; }
+nav button.group[aria-expanded="true"]::after { transform:rotate(90deg); }
+nav .sub { margin:0 0 6px 10px; padding-left:8px; border-left:1px solid var(--line); }
+nav .sub[hidden] { display:none; }
+nav .sub a { padding:6px 10px; font-size:.95em; }
+nav .sep { height:1px; background:var(--line); margin:10px 6px; }
+.badge { background:var(--accent); color:var(--accent-fg); border-radius:99px; padding:0 8px; font-size:.8em; }
+main { padding:28px 32px; max-width:1100px; width:100%; }
+h1 { margin:0 0 4px; font-size:1.5em } h2 { margin:28px 0 10px; font-size:1.1em }
+.muted { color:var(--muted) } .ok { color:var(--ok) } .bad { color:var(--bad) } .warn { color:var(--warn) }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; margin:16px 0; }
+.card, .panel { background:var(--panel); border-radius:12px; padding:14px 16px; border:1px solid var(--line); }
+.card .value { font-size:1.5em; font-weight:600; color:var(--accent); overflow-wrap:anywhere; }
+.panel { margin:14px 0; }
+table { border-collapse:collapse; width:100%; background:var(--panel); border-radius:12px; overflow:hidden;
+  border:1px solid var(--line); }
+th, td { padding:8px 12px; text-align:left; border-bottom:1px solid var(--line); }
+tr:last-child td { border-bottom:0 } th { font-weight:600; font-size:.9em; color:var(--muted); }
+.table-wrap { overflow-x:auto }
+.bar { height:10px; border-radius:99px; background:var(--line); overflow:hidden; margin-top:8px; }
+.bar > div { height:100%; background:var(--accent); }
+form .field { margin:14px 0; } form label { display:block; font-weight:600; margin-bottom:4px; }
+form .help { color:var(--muted); font-size:.88em; margin-top:3px; }
+input[type=text], input[type=number], select, textarea { width:100%; max-width:560px; padding:8px 10px; font:inherit;
+  color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:8px; }
+textarea { min-height:90px; font-family:ui-monospace, Consolas, monospace; font-size:.92em; }
+.dyn { max-width:560px } .dyn .line { display:flex; gap:8px; align-items:center } .dyn .line select { flex:1 }
+.dyn input[type=text] { margin-top:8px } .dyn .help:empty { display:none }
+.checks { display:grid; gap:6px; max-width:760px } .check.multi { font-weight:400; align-items:flex-start }
+.check.multi input { margin-top:3px }
+.check { display:flex; align-items:center; gap:8px; font-weight:600; } .check input { width:18px; height:18px; }
+button.primary, button.secondary { font:inherit; padding:9px 18px; border-radius:8px; cursor:pointer; border:1px solid var(--accent); }
+button.primary { background:var(--accent); color:var(--accent-fg); font-weight:600; }
+button.secondary { background:none; color:var(--accent); }
+button.danger { border-color:var(--bad); color:var(--bad); }
+button:disabled { opacity:.5; cursor:default; }
+details { margin:18px 0 } summary { cursor:pointer; color:var(--muted); }
+.error { background:rgba(197,48,48,.12); color:var(--bad); padding:10px 14px; border-radius:8px; margin:12px 0; }
+.status { font-weight:600; border-radius:99px; padding:1px 10px; font-size:.85em; border:1px solid currentColor; }
+pre.log { background:var(--code); color:var(--code-fg); padding:14px; border-radius:10px; overflow:auto; max-height:62vh;
+  min-height:140px; font:13px/1.4 ui-monospace, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0; }
+code.cmd { background:var(--line); padding:2px 6px; border-radius:6px; overflow-wrap:anywhere; }
+.cfg { display:grid; grid-template-columns:minmax(160px,260px) 1fr; gap:4px 16px; }
+.cfg div:nth-child(odd) { color:var(--muted); } .cfg div { overflow-wrap:anywhere; }
+@media (max-width:760px) {
+  .layout { grid-template-columns:1fr; } nav { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); }
+  main { padding:20px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav id="menu" aria-label="Menu principal"></nav>
+  <main id="view"></main>
+</div>
+<script>
+"use strict";
+const $view = document.getElementById("view");
+const $menu = document.getElementById("menu");
+let catalog = [];
+let timer = null;           // refresh timer of the current page
+let runningCount = 0;
+
+// ------------------------------------------------------------------ helpers
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else if (key === "class") el.className = value;
+    else el.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    el.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return el;
+}
+
+async function api(path, options) {
+  const init = { headers: { "Content-Type": "application/json" }, ...options };
+  const response = await fetch(path, init);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join(", ") : data.detail;
+    throw new Error(detail || `Erreur ${response.status}`);
+  }
+  return data;
+}
+
+const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body || {}) });
+const fmt = (v, digits = 4) => (v === null || v === undefined ? "-" : typeof v === "number" && !Number.isInteger(v) ? v.toFixed(digits) : String(v));
+const fmtDate = (s) => (s ? s.replace("T", " ").slice(0, 16) : "-");
+const STATUS = { running: ["En cours", "warn"], done: ["Terminée", "ok"], failed: ["Échec", "bad"], stopped: ["Arrêtée", "muted"], interrupted: ["Interrompue", "muted"] };
+const statusBadge = (s) => h("span", { class: `status ${STATUS[s]?.[1] || ""}` }, STATUS[s]?.[0] || s);
+
+function table(headers, rows) {
+  return h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, headers.map((t) => h("th", {}, t)))),
+    h("tbody", {}, rows.length ? rows.map((r) => h("tr", {}, r.map((c) => h("td", {}, c)))) :
+      [h("tr", {}, h("td", { colspan: headers.length, class: "muted" }, "Aucune donnée"))])));
+}
+const cards = (items) => h("div", { class: "grid" }, items.map(([label, value]) =>
+  h("div", { class: "card" }, h("div", { class: "muted" }, label), h("div", { class: "value" }, String(value)))));
+
+function clearTimer() { if (timer) { clearInterval(timer); timer = null; } }
+
+// ------------------------------------------------------------------ menu
+function buildMenu() {
+  $menu.replaceChildren(h("div", { class: "brand" }, "AutoYOLO Trainer"));
+  $menu.append(h("a", { href: "#/overview", "data-route": "overview" }, "Vue d'ensemble"));
+  for (const group of catalog) {
+    const sub = h("div", { class: "sub", hidden: true, id: `sub-${group.id}` });
+    const button = h("button", { class: "group", "aria-expanded": "false", "aria-controls": `sub-${group.id}`,
+      onclick: () => toggleGroup(group.id) }, group.label);
+    for (const item of group.items) {
+      const route = item.type === "page" ? item.id : `a/${item.id}`;
+      sub.append(h("a", { href: `#/${route}`, "data-route": route, "data-group": group.id }, item.label));
+    }
+    $menu.append(button, sub);
+  }
+  $menu.append(h("div", { class: "sep" }),
+    h("a", { href: "#/jobs", "data-route": "jobs" }, "Tâches", h("span", { class: "badge", id: "running-badge", hidden: true })),
+    h("a", { href: "#/config", "data-route": "config" }, "Configuration"));
+}
+
+function toggleGroup(id, open) {
+  const button = $menu.querySelector(`button[aria-controls="sub-${id}"]`);
+  const sub = document.getElementById(`sub-${id}`);
+  const expand = open ?? button.getAttribute("aria-expanded") !== "true";
+  button.setAttribute("aria-expanded", String(expand));
+  sub.hidden = !expand;
+}
+
+function markActive(route) {
+  for (const link of $menu.querySelectorAll("a")) {
+    const active = link.dataset.route === route || (route.startsWith("jobs/") && link.dataset.route === "jobs");
+    link.classList.toggle("active", active);
+    if (active && link.dataset.group) toggleGroup(link.dataset.group, true);
+  }
+}
+
+function setRunning(count) {
+  runningCount = count;
+  const badge = document.getElementById("running-badge");
+  if (badge) { badge.hidden = count === 0; badge.textContent = count; }
+}
+
+async function refreshRunning() {
+  try { setRunning((await api("/api/jobs")).filter((j) => j.status === "running").length); } catch { /* offline */ }
+}
+
+// ------------------------------------------------------------------ pages
+async function overviewPage() {
+  const [stats, perDay] = await Promise.all([api("/api/stats"), api("/api/captures-per-day")]);
+  const progress = Math.min(100, Math.round((100 * stats.pending_for_training) / Math.max(1, stats.min_new_images)));
+  const trainings = stats.trainings.map((t) => {
+    const m = t.metrics || {};
+    return [`v${t.version}${t.active ? " ★" : ""}`, fmtDate(t.created_at), `v${t.dataset_version}`,
+      ...["map50", "map50_95", "precision", "recall", "f1"].map((k) => fmt(m[k]))];
+  });
+  $view.replaceChildren(
+    h("h1", {}, "Vue d'ensemble"), h("div", { class: "muted" }, "Rafraîchie toutes les 30 secondes."),
+    cards([
+      ["Images du dataset", stats.dataset_images], ["Annotations", stats.dataset_annotations],
+      ["Modèle actif", stats.active_model ? `v${stats.active_model}` : "aucun"],
+      ["Meilleure mAP50", fmt(stats.best_map50)], ["Meilleure mAP50-95", fmt(stats.best_map50_95)],
+      ["Captures (total)", stats.captures_total], ["Captures à traiter", stats.captures_pending],
+      ["À valider (review)", stats.review], ["Acceptées", stats.accepted], ["Rejetées", stats.rejected],
+      ["Espace disque libre", stats.disk_free],
+    ]),
+    h("div", { class: "panel" },
+      h("strong", {}, "Prochain entraînement : "), `${stats.pending_for_training} / ${stats.min_new_images} images (${progress} %)`,
+      h("div", { class: "bar" }, h("div", { style: `width:${progress}%` }))),
+    h("h2", {}, "Derniers entraînements"),
+    table(["Modèle", "Date", "Dataset", "mAP50", "mAP50-95", "Precision", "Recall", "F1"], trainings),
+    h("h2", {}, "Progression du dataset"),
+    table(["Version", "Date", "Images"], stats.dataset_growth.map((g) => [`v${g.version}`, fmtDate(g.created_at), g.images])),
+    h("h2", {}, "Annotations par classe"),
+    table(["Classe", "Boîtes"], Object.entries(stats.per_class).sort((a, b) => b[1] - a[1])),
+    h("h2", {}, "Captures par jour"),
+    table(["Jour", "Captures"], perDay.slice(-14).reverse().map((d) => [d.day, d.captures])),
+    h("h2", {}, "Espace disque utilisé"),
+    table(["Dossier", "Taille"], Object.entries(stats.disk_usage)));
+  timer = setInterval(() => overviewPage().catch(() => {}), 30000);
+}
+
+async function modelsPage() {
+  const [models, stats] = await Promise.all([api("/api/models"), api("/api/stats")]);
+  const rows = models.map((m) => {
+    const x = m.metrics || {};
+    const activate = m.active ? h("span", { class: "ok" }, "★ actif")
+      : h("button", { class: "secondary", onclick: () => activateModel(m.version) }, "Activer");
+    const speed = m.speed_ms ? `${fmt(m.speed_ms, 1)} (${Math.round(1000 / m.speed_ms)} FPS)` : "-";
+    return [`v${m.version}`, m.architecture || "-", fmtDate(m.created_at), `v${m.dataset_version}`,
+      ...["map50", "map50_95", "precision", "recall", "f1"].map((k) => fmt(x[k])), speed, activate];
+  });
+  $view.replaceChildren(
+    h("h1", {}, "Historique des modèles"),
+    h("p", { class: "muted" }, "Tous les candidats sont conservés ; seul un meilleur modèle devient actif automatiquement. « Activer » permet un retour en arrière."),
+    table(["Modèle", "Architecture", "Date", "Dataset", "mAP50", "mAP50-95", "Precision", "Recall", "F1", "ms/image", ""], rows),
+    h("p", { class: "muted" }, "ms/image = temps médian d'inférence (pré et post-traitement compris). « Mesurer la vitesse » (menu Modèles) le calcule pour les anciens modèles."),
+    h("h2", {}, "Versions du dataset"),
+    table(["Version", "Date", "Images"], [...stats.dataset_growth].reverse().map((g) => [`v${g.version}`, fmtDate(g.created_at), g.images])));
+}
+
+async function activateModel(version) {
+  if (!confirm(`Activer le modèle v${version} ?`)) return;
+  try { location.hash = `#/jobs/${(await post("/api/jobs", { action: "promote", values: { version } })).id}`; }
+  catch (error) { alert(error.message); }
+}
+
+// ------------------------------------------------------------------ action form
+const OVERRIDES_KEY = "autoyolo.overrides";
+const storedOverrides = () => { try { return localStorage.getItem(OVERRIDES_KEY) || ""; } catch { return ""; } };
+const storeOverrides = (text) => { try { localStorage.setItem(OVERRIDES_KEY, text); } catch { /* private mode */ } };
+const overrideLines = (text) => text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+const CHOICE_LABELS = { window: "Une fenêtre", screen: "Un écran", camera: "Caméra", video: "Fichier vidéo", folder: "Dossier d'images" };
+
+const OTHER = "__other__";
+
+// Check-boxes for several choices (e.g. the YOLO models to compare).
+function multiInput(field, common) {
+  const labels = Object.fromEntries(field.labels || []);
+  const checked = new Set(field.default || []);
+  return h("div", { class: "checks", id: common.id }, field.choices.map((choice) => {
+    const [name, ...rest] = (labels[choice] || choice).split(" - ");
+    return h("label", { class: "check multi" },
+      h("input", { type: "checkbox", value: choice, checked: checked.has(choice) }),
+      h("span", {}, h("strong", {}, name), rest.length ? h("span", { class: "muted" }, ` - ${rest.join(" - ")}`) : null));
+  }));
+}
+const matches = (current, expected) => (Array.isArray(expected) ? expected.includes(current) : current === expected);
+const screenLabel = (s) => `${s.index === 0 ? "Tous les écrans" : `Écran ${s.index}`} · ${s.width}×${s.height}${s.primary ? " (principal)" : ""}`;
+const windowLabel = (w) => `${w.title.length > 80 ? `${w.title.slice(0, 77)}…` : w.title}  (${w.width}×${w.height})`;
+
+// Drop-down filled from /api/screens or /api/windows (the page asks the server what is open right now).
+function dynamicInput(field, common) {
+  const windows = field.dynamic === "windows";
+  const select = h("select", common);
+  const custom = h("input", { type: "text", name: `${field.name}_custom`, hidden: true, autocomplete: "off",
+    placeholder: "Titre (ou début du titre) de la fenêtre" });
+  const refresh = h("button", { type: "button", class: "secondary", title: "Actualiser la liste" }, "↻ Actualiser");
+  const note = h("div", { class: "help" });
+  const sync = () => { custom.hidden = !(windows && select.value === OTHER); };
+  select.addEventListener("change", sync);
+
+  async function load() {
+    const previous = select.value;
+    refresh.disabled = true;
+    let items = [];
+    try { items = await api(`/api/${field.dynamic}`); note.textContent = ""; }
+    catch (error) { note.textContent = error.message; }
+    const options = items.map((item) => (windows
+      ? h("option", { value: item.title }, windowLabel(item)) : h("option", { value: item.index }, screenLabel(item))));
+    if (windows) options.push(h("option", { value: OTHER }, items.length ? "Autre… (saisir un titre)" : "Saisir un titre…"));
+    if (!items.length && !note.textContent) note.textContent = "Aucune entrée trouvée (disponible sous Windows uniquement).";
+    select.replaceChildren(...(options.length ? options : [h("option", { value: "" }, "(indisponible)")]));
+    const known = [...select.options].some((o) => o.value === previous);
+    const primary = items.find((i) => i.primary);
+    if (known) select.value = previous; else if (!windows && primary) select.value = String(primary.index);
+    refresh.disabled = false;
+    sync();
+  }
+  refresh.addEventListener("click", load);
+  load();
+  return h("div", { class: "dyn" }, h("div", { class: "line" }, select, refresh), custom, note);
+}
+
+function fieldInput(field) {
+  const id = `f-${field.name}`;
+  const common = { id, name: field.name };
+  if (field.dynamic) return dynamicInput(field, common);
+  if (field.kind === "multichoice") return multiInput(field, common);
+  if (field.kind === "bool") return h("input", { ...common, type: "checkbox", checked: field.default === true });
+  if (field.kind === "lines") return h("textarea", { ...common, placeholder: field.placeholder });
+  if (field.kind === "choice") {
+    return h("select", common, field.required ? [] : h("option", { value: "" }, "(défaut de la configuration)"),
+      field.choices.map((c) => h("option", { value: c, selected: c === field.default }, CHOICE_LABELS[c] || c)));
+  }
+  if (field.kind === "int" || field.kind === "float") {
+    return h("input", { ...common, type: "number", min: field.minimum, step: field.kind === "int" ? "1" : "any",
+      value: field.default, placeholder: field.placeholder });
+  }
+  return h("input", { ...common, type: "text", placeholder: field.placeholder, value: field.default, autocomplete: "off" });
+}
+
+function readField(field, form) {
+  if (field.kind === "multichoice") {
+    return [...form.querySelectorAll(`#f-${field.name} input:checked`)].map((input) => input.value);
+  }
+  const el = form.elements[field.name];
+  if (field.dynamic === "windows" && el.value === OTHER) return form.elements[`${field.name}_custom`].value;
+  if (field.kind === "bool") return el.checked;
+  if (field.kind === "lines") return el.value.split("\n").map((l) => l.trim()).filter(Boolean);
+  return el.value;
+}
+
+function actionPage(action) {
+  const form = h("form", { novalidate: true });
+  const wrappers = {};
+  for (const field of action.fields) {
+    const input = fieldInput(field);
+    const label = field.kind === "bool"
+      ? h("label", { class: "check", for: `f-${field.name}` }, input, field.label)
+      : h("label", { for: `f-${field.name}` }, field.label + (field.required ? " *" : ""));
+    wrappers[field.name] = h("div", { class: "field" }, label, field.kind === "bool" ? null : input,
+      field.help ? h("div", { class: "help" }, field.help) : null);
+    form.append(wrappers[field.name]);
+  }
+  const syncVisibility = () => {
+    for (const field of action.fields) {
+      if (!field.show_if) continue;
+      const [other, value] = field.show_if;
+      wrappers[field.name].hidden = !matches(form.elements[other].value, value);
+    }
+  };
+  form.addEventListener("input", syncVisibility);
+  syncVisibility();
+
+  const overrides = h("textarea", { placeholder: "training.epochs=10\nlabeling.confidence_accept=0.9" });
+  overrides.value = storedOverrides();
+  overrides.addEventListener("input", () => storeOverrides(overrides.value));
+  if (action.overrides) {
+    form.append(h("details", {}, h("summary", {}, "Options avancées : surcharges de configuration"),
+      h("div", { class: "help" }, "Une surcharge CLE=VALEUR par ligne, partagée par toutes les actions (voir Configuration)."), overrides));
+  }
+
+  const error = h("div", { class: "error", hidden: true });
+  const submit = h("button", { class: "primary", type: "submit" }, "Lancer");
+  form.append(error, h("div", { class: "row" }, submit));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.hidden = true;
+    const values = {};
+    for (const field of action.fields) values[field.name] = readField(field, form);
+    if (action.confirm && !(action.confirm_unless && values[action.confirm_unless]) && !confirm(action.confirm)) return;
+    submit.disabled = true;
+    try {
+      const body = { action: action.id, values, overrides: action.overrides ? overrideLines(overrides.value) : [] };
+      location.hash = `#/jobs/${(await post("/api/jobs", body)).id}`;
+    } catch (e) {
+      error.textContent = e.message; error.hidden = false; submit.disabled = false;
+    }
+  });
+  $view.replaceChildren(h("h1", {}, action.label), h("p", { class: "muted" }, action.description), h("div", { class: "panel" }, form));
+}
+
+// ------------------------------------------------------------------ jobs
+async function jobsPage() {
+  const jobs = await api("/api/jobs");
+  setRunning(jobs.filter((j) => j.status === "running").length);
+  $view.replaceChildren(h("h1", {}, "Tâches"),
+    h("p", { class: "muted" }, "Chaque action lancée depuis le menu tourne en arrière-plan. Les tâches en cours sont arrêtées quand le dashboard se ferme."),
+    table(["Action", "Statut", "Début", "Fin", ""], jobs.map((j) => [j.label, statusBadge(j.status), fmtDate(j.started_at),
+      fmtDate(j.finished_at), h("a", { href: `#/jobs/${j.id}` }, "Détails")])));
+  timer = setInterval(() => jobsPage().catch(() => {}), 3000);
+}
+
+// Rebuilds what a terminal would show: "\r" overwrites the current line (progress bars).
+function renderTerminal(raw) {
+  const text = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\r\n/g, "\n");
+  return text.split("\n").map((line) => line.split("\r").pop()).slice(-2000).join("\n");
+}
+
+async function jobPage(id) {
+  const status = h("span"), command = h("code", { class: "cmd" }), log = h("pre", { class: "log" }, "…");
+  const stop = h("button", { class: "secondary danger", hidden: true }, "Arrêter");
+  const follow = h("label", { class: "check" }, h("input", { type: "checkbox", checked: true }), "Suivre la fin du journal");
+  $view.replaceChildren(h("h1", { id: "job-title" }, "Tâche"),
+    h("div", { class: "row" }, status, command),
+    h("div", { class: "row" }, stop, h("a", { href: "#/jobs" }, "← Toutes les tâches"), follow), log);
+  let raw = "", offset = 0, busy = false;
+
+  async function poll() {
+    if (busy) return;
+    busy = true;
+    try {
+      const job = await api(`/api/jobs/${id}?offset=${offset}`);
+      raw = (raw + job.log).slice(-400000); offset = job.offset;
+      document.getElementById("job-title").textContent = job.label;
+      status.replaceChildren(statusBadge(job.status)); command.textContent = job.command;
+      stop.hidden = job.status !== "running";
+      log.textContent = renderTerminal(raw) || (job.status === "running" ? "En attente de sortie…" : "(aucune sortie)");
+      if (follow.firstChild.checked) log.scrollTop = log.scrollHeight;
+      if (job.status !== "running" && !job.log) { clearTimer(); refreshRunning(); }
+    } catch (e) {
+      log.textContent = e.message; clearTimer();
+    } finally { busy = false; }
+  }
+  stop.addEventListener("click", async () => {
+    stop.disabled = true;
+    try { await post(`/api/jobs/${id}/stop`); } catch (e) { alert(e.message); }
+    stop.disabled = false; poll();
+  });
+  await poll();
+  timer = setInterval(poll, 1500);
+}
+
+// ------------------------------------------------------------------ configuration
+async function configPage() {
+  const config = await api("/api/config");
+  const overrides = h("textarea", { placeholder: "training.epochs=10\nlabeling.confidence_accept=0.9" });
+  overrides.value = storedOverrides();
+  overrides.addEventListener("input", () => storeOverrides(overrides.value));
+  const sections = Object.entries(config).map(([name, value]) => {
+    const entries = value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value) : [[name, value]];
+    return h("details", {}, h("summary", {}, name),
+      h("div", { class: "panel cfg" }, entries.flatMap(([k, v]) => [h("div", {}, k), h("div", {}, typeof v === "object" ? JSON.stringify(v) : String(v))])));
+  });
+  $view.replaceChildren(h("h1", {}, "Configuration"),
+    h("p", { class: "muted" }, "Valeurs effectives du dashboard (mots de passe masqués). Pour les changer durablement, éditez config/config.yaml."),
+    h("h2", {}, "Surcharges appliquées aux actions"),
+    h("div", { class: "panel" }, h("div", { class: "help" }, "Une surcharge Hydra CLE=VALEUR par ligne (ex. training.epochs=10). Enregistrées dans ce navigateur, envoyées avec chaque action."), overrides),
+    h("h2", {}, "Valeurs actuelles"), sections);
+}
+
+// ------------------------------------------------------------------ router
+async function route() {
+  clearTimer();
+  const path = (location.hash.replace(/^#\//, "") || "overview");
+  markActive(path);
+  try {
+    if (path === "overview") await overviewPage();
+    else if (path === "models") await modelsPage();
+    else if (path === "jobs") await jobsPage();
+    else if (path.startsWith("jobs/")) await jobPage(path.slice(5));
+    else if (path === "config") await configPage();
+    else if (path.startsWith("a/")) {
+      const action = catalog.flatMap((g) => g.items).find((i) => i.type === "action" && i.id === path.slice(2));
+      if (!action) throw new Error("Page introuvable");
+      actionPage(action);
+    } else throw new Error("Page introuvable");
+  } catch (error) {
+    $view.replaceChildren(h("h1", {}, "Erreur"), h("div", { class: "error" }, error.message));
+  }
+  window.scrollTo(0, 0);
+}
+
+(async function start() {
+  try { catalog = await api("/api/catalog"); } catch (error) {
+    $view.replaceChildren(h("div", { class: "error" }, `Impossible de charger le menu: ${error.message}`)); return;
+  }
+  buildMenu();
+  addEventListener("hashchange", route);
+  setInterval(refreshRunning, 5000);
+  refreshRunning();
+  route();
+})();
+</script>
+</body>
+</html>

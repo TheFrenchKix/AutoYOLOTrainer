@@ -115,6 +115,8 @@ def main() -> int:
 
     if args.review:
         review = client.ensure_project(cfg.review_project_title, label_config, "Revue des images incertaines")
+        # Without a storage covering review/, Label Studio refuses to serve the images (404 on /data/local-files).
+        client.ensure_local_storage(review["id"], ctx.workspace.review, "review images", sync=False)
         pushed = push_review_tasks(ctx, client, review["id"])
         print(f"Projet de revue: {cfg.url}/projects/{review['id']} ({pushed} nouvelles tâches pré-annotées)")
 

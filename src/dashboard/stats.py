@@ -47,7 +47,9 @@ def captures_per_day(index_file: Path) -> pd.DataFrame:
     if not index_file.exists():
         return pd.DataFrame(columns=["day", "captures"])
     frame = pd.read_csv(index_file, parse_dates=["timestamp"])
-    return frame.groupby(frame["timestamp"].dt.date).size().rename("captures").reset_index(names="day")
+    counts = frame.groupby(frame["timestamp"].dt.date).size().rename("captures")
+    counts.index.name = "day"
+    return counts.reset_index()
 
 
 def collect_stats(config: AppConfig, workspace: Workspace, heavy: bool = True) -> ProjectStats:

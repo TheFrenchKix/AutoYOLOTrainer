@@ -49,10 +49,11 @@ class YoloDetector:
         with self._lock:
             self._model, self.weights = model, Path(weights)
 
-    def predict(self, image: np.ndarray) -> list[Detection]:
+    def predict(self, image: np.ndarray, imgsz: int | None = None) -> list[Detection]:
+        """Detections on a BGR image; ``imgsz`` overrides the input size for this call (small crops)."""
         with self._lock:
             results = self._model.predict(
-                image, conf=self.confidence, imgsz=self.imgsz, device=self.device, verbose=False
+                image, conf=self.confidence, imgsz=imgsz or self.imgsz, device=self.device, verbose=False
             )
         detections: list[Detection] = []
         names = self.class_names

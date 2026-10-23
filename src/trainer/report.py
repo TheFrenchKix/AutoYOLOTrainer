@@ -46,8 +46,9 @@ def _history_chart(frame: pd.DataFrame) -> str:
 def history_frame(history: list[dict[str, Any]]) -> pd.DataFrame:
     """Flatten the registry history into a DataFrame (one row per model)."""
     rows = [
-        {"version": h["version"], "dataset": h.get("dataset_version"), "created_at": h.get("created_at"),
-         "active": h.get("active", False), **(h.get("metrics") or {})}
+        {"version": h["version"], "architecture": h.get("architecture"), "dataset": h.get("dataset_version"),
+         "created_at": h.get("created_at"), "active": h.get("active", False), **(h.get("metrics") or {}),
+         "ms_image": h.get("speed_ms")}
         for h in history
     ]
     return pd.DataFrame(rows)

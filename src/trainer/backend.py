@@ -3,8 +3,11 @@ which keeps it testable without a GPU and open to other frameworks."""
 
 from __future__ import annotations
 
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 from typing import Any, Protocol
 
 from src.config.schema import TrainingConfig
@@ -24,6 +27,10 @@ class TrainingBackend(Protocol):
     def train(self, data_yaml: Path, weights: str, project_dir: Path, name: str, epochs: int) -> TrainResult: ...
 
     def evaluate(self, weights: Path, data_yaml: Path, project_dir: Path, name: str) -> Metrics: ...
+
+    def benchmark(self, weights: Path, images: Sequence[Path]) -> dict[str, float]:
+        """Speed of a model: ``inference_ms`` (median per image, end to end) and ``params_m`` (millions)."""
+        ...
 
 
 class UltralyticsBackend:
@@ -80,3 +87,27 @@ class UltralyticsBackend:
             verbose=False,
         )
         return Metrics.from_ultralytics(results)
+
+    def benchmark(self, weights: Path, images: Sequence[Path], runs: int = 30, warmup: int = 3) -> dict[str, float]:
+        """Median time of ``YOLO.predict`` (pre-processing and NMS included) over up to ``runs`` images."""
+        from ultralytics import YOLO
+
+        from src.utils.images import read_image
+
+        frames = [frame for frame in (read_image(p) for p in list(images)[:runs]) if frame is not None]
+        if not frames:
+            return {}
+        model = YOLO(str(weights))
+
+        def predict(frame):  # noqa: ANN001, ANN202
+            return model.predict(frame, imgsz=self.config.imgsz, device=self.config.device, verbose=False)
+
+        for frame in frames[:warmup]:  # CUDA initialisation, layer fusion...
+            predict(frame)
+        timings = []
+        for frame in frames:
+            start = time.perf_counter()
+            predict(frame)
+            timings.append((time.perf_counter() - start) * 1000)
+        params = sum(p.numel() for p in model.model.parameters()) / 1e6
+        return {"inference_ms": round(median(timings), 2), "params_m": round(params, 2)}

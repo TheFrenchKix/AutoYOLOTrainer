@@ -37,6 +37,8 @@ class SourceConfig:
     type: str = "screen"
     camera_index: int = 0
     path: str | None = None
+    window: str | None = None
+    screen: int | None = None
     region: list[int] | None = None
     fps: float = 5.0
 

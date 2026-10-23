@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from src.datasets.versioning import VersionRegistry
 from src.utils.files import read_json, write_json
 
@@ -64,6 +66,29 @@ class ModelRegistry:
     def info(self, version: int) -> dict[str, Any]:
         return read_json(self.versions.path(version) / "info.json", default={})
 
+    def update_info(self, version: int, **values: Any) -> None:
+        """Merge ``values`` into ``models/vN/info.json`` (e.g. a speed measurement made after training)."""
+        path = self.versions.path(version) / "info.json"
+        write_json(path, {**read_json(path, default={}), **values})
+
+    def architecture(self, version: int, _depth: int = 0) -> str:
+        """Architecture of a version (``yolo11n``...), even for models trained before it was recorded.
+
+        A model fine-tuned from another version inherits its architecture: the chain is followed through
+        the ``model`` argument Ultralytics saved in the training run.
+        """
+        info = self.info(version)
+        if info.get("architecture"):
+            return str(info["architecture"])
+        args_file = Path(info["run_dir"]) / "args.yaml" if info.get("run_dir") else None
+        if args_file is None or not args_file.exists() or _depth > 20:
+            return "inconnue"
+        model = Path(str((yaml.safe_load(args_file.read_text(encoding="utf-8")) or {}).get("model", "")))
+        parent = model.parent
+        if parent.name.startswith("v") and parent.name[1:].isdigit() and parent.parent == self.versions.base_dir:
+            return self.architecture(int(parent.name[1:]), _depth + 1)
+        return model.stem or "inconnue"
+
     def active_metrics(self) -> dict[str, float] | None:
         version = self.active_version()
         return self.info(version).get("metrics") if version is not None else None
@@ -72,7 +97,7 @@ class ModelRegistry:
         """Info of every model version, oldest first."""
         active = self.active_version()
         return [
-            {**self.info(v), "version": v, "active": v == active}
+            {**self.info(v), "version": v, "active": v == active, "architecture": self.architecture(v)}
             for v in self.versions.versions()
             if self.versions.path(v).exists()
         ]

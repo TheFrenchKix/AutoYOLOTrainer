@@ -94,8 +94,14 @@ class LabelStudioClient:
         return project
 
     # --------------------------------------------------------------- storage
-    def ensure_local_storage(self, project_id: int, folder: Path, title: str) -> int:
-        """Attach a local folder (must be under the document root) and sync it."""
+    def ensure_local_storage(self, project_id: int, folder: Path, title: str, sync: bool = True) -> int:
+        """Attach a local folder (must be under the document root) to the project.
+
+        Label Studio only serves ``/data/local-files/?d=...`` for files inside a folder covered by a storage
+        of the project, so every project showing local images needs one. ``sync`` also turns each image of
+        the folder into a task: wanted for the raw images, not for the review project, whose tasks (with
+        their predictions) are imported separately.
+        """
         storages = self._request("GET", "/api/storages/localfiles", params={"project": project_id}) or []
         path = str(folder.resolve())
         storage = next((s for s in storages if Path(s.get("path", "")).resolve() == Path(path)), None)
@@ -104,7 +110,8 @@ class LabelStudioClient:
                 "project": project_id, "path": path, "title": title,
                 "regex_filter": IMAGE_REGEX, "use_blob_urls": True,
             })
-        self._request("POST", f"/api/storages/localfiles/{storage['id']}/sync")
+        if sync:
+            self._request("POST", f"/api/storages/localfiles/{storage['id']}/sync")
         return int(storage["id"])
 
     def import_tasks(self, project_id: int, tasks: list[dict[str, Any]]) -> None:
